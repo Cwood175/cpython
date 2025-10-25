@@ -1,24 +1,29 @@
+import _opcode
 import contextlib
+import gc
 import itertools
+import os
 import sys
 import textwrap
-import unittest
-import gc
-import os
 import types
+import unittest
 
-import _opcode
-
-from test.support import (script_helper, requires_specialization,
-                          import_helper, Py_GIL_DISABLED, requires_jit_enabled,
-                          reset_code)
+from test.support import (
+    Py_GIL_DISABLED,
+    import_helper,
+    requires_jit_enabled,
+    requires_specialization,
+    reset_code,
+    script_helper,
+)
 
 _testinternalcapi = import_helper.import_module("_testinternalcapi")
 
 from _testinternalcapi import _PY_NSMALLPOSINTS, TIER2_THRESHOLD
 
-#For test of issue 136154
+# For test of issue 136154
 GLOBAL_136154 = 42
+
 
 @contextlib.contextmanager
 def clear_executors(func):
@@ -42,6 +47,8 @@ def get_first_executor(func):
 
 
 def iter_opnames(ex):
+    if ex is None:
+        return
     for item in ex:
         yield item[0]
 
@@ -51,10 +58,11 @@ def get_opnames(ex):
 
 
 @requires_specialization
-@unittest.skipIf(Py_GIL_DISABLED, "optimizer not yet supported in free-threaded builds")
+@unittest.skipIf(
+    Py_GIL_DISABLED, "optimizer not yet supported in free-threaded builds"
+)
 @requires_jit_enabled
 class TestExecutorInvalidation(unittest.TestCase):
-
     def test_invalidate_object(self):
         # Generate a new set of functions at each call
         ns = {}
@@ -63,10 +71,11 @@ class TestExecutorInvalidation(unittest.TestCase):
             def f{n}():
                 for _ in range({TIER2_THRESHOLD}):
                     pass
-            """ for n in range(5)
+            """
+            for n in range(5)
         )
         exec(textwrap.dedent(func_src), ns, ns)
-        funcs = [ ns[f'f{n}'] for n in range(5)]
+        funcs = [ns[f"f{n}"] for n in range(5)]
         objects = [object() for _ in range(5)]
 
         for f in funcs:
@@ -76,13 +85,13 @@ class TestExecutorInvalidation(unittest.TestCase):
         # with an equal or lower index.
         for i, exe in enumerate(executors):
             self.assertTrue(exe.is_valid())
-            for obj in objects[:i+1]:
+            for obj in objects[: i + 1]:
                 _testinternalcapi.add_executor_dependency(exe, obj)
             self.assertTrue(exe.is_valid())
         # Assert that the correct executors are invalidated
         # and check that nothing crashes when we invalidate
         # an executor multiple times.
-        for i in (4,3,2,1,0):
+        for i in (4, 3, 2, 1, 0):
             _testinternalcapi.invalidate_executors(objects[i])
             for exe in executors[i:]:
                 self.assertFalse(exe.is_valid())
@@ -92,12 +101,16 @@ class TestExecutorInvalidation(unittest.TestCase):
     def test_uop_optimizer_invalidation(self):
         # Generate a new function at each call
         ns = {}
-        exec(textwrap.dedent(f"""
+        exec(
+            textwrap.dedent(f"""
             def f():
                 for i in range({TIER2_THRESHOLD}):
                     pass
-        """), ns, ns)
-        f = ns['f']
+        """),
+            ns,
+            ns,
+        )
+        f = ns["f"]
         f()
         exe = get_first_executor(f)
         self.assertIsNotNone(exe)
@@ -109,6 +122,7 @@ class TestExecutorInvalidation(unittest.TestCase):
         def f():
             for _ in range(TIER2_THRESHOLD):
                 pass
+
         f()
         exe = get_first_executor(f)
         self.assertIsNotNone(exe)
@@ -120,11 +134,14 @@ class TestExecutorInvalidation(unittest.TestCase):
 
 
 @requires_specialization
-@unittest.skipIf(Py_GIL_DISABLED, "optimizer not yet supported in free-threaded builds")
+@unittest.skipIf(
+    Py_GIL_DISABLED, "optimizer not yet supported in free-threaded builds"
+)
 @requires_jit_enabled
-@unittest.skipIf(os.getenv("PYTHON_UOPS_OPTIMIZE") == "0", "Needs uop optimizer to run.")
+@unittest.skipIf(
+    os.getenv("PYTHON_UOPS_OPTIMIZE") == "0", "Needs uop optimizer to run."
+)
 class TestUops(unittest.TestCase):
-
     def test_basic_loop(self):
         def testfunc(x):
             i = 0
@@ -143,7 +160,8 @@ class TestUops(unittest.TestCase):
     def test_extended_arg(self):
         "Check EXTENDED_ARG handling in superblock creation"
         ns = {}
-        exec(textwrap.dedent(f"""
+        exec(
+            textwrap.dedent(f"""
             def many_vars():
                 # 260 vars, so z9 should have index 259
                 a0 = a1 = a2 = a3 = a4 = a5 = a6 = a7 = a8 = a9 = 42
@@ -175,7 +193,10 @@ class TestUops(unittest.TestCase):
                 while z9 > 0:
                     z9 = z9 - 1
                     +z9
-        """), ns, ns)
+        """),
+            ns,
+            ns,
+        )
         many_vars = ns["many_vars"]
 
         ex = get_first_executor(many_vars)
@@ -184,8 +205,12 @@ class TestUops(unittest.TestCase):
 
         ex = get_first_executor(many_vars)
         self.assertIsNotNone(ex)
-        self.assertTrue(any((opcode, oparg, operand) == ("_LOAD_FAST_BORROW", 259, 0)
-                            for opcode, oparg, _, operand in list(ex)))
+        self.assertTrue(
+            any(
+                (opcode, oparg, operand) == ("_LOAD_FAST_BORROW", 259, 0)
+                for opcode, oparg, _, operand in list(ex)
+            )
+        )
 
     def test_unspecialized_unpack(self):
         # An example of an unspecialized opcode
@@ -368,7 +393,8 @@ class TestUops(unittest.TestCase):
     def test_call_py_exact_args(self):
         def testfunc(n):
             def dummy(x):
-                return x+1
+                return x + 1
+
             for i in range(n):
                 dummy(i)
 
@@ -399,8 +425,10 @@ class TestUops(unittest.TestCase):
         class MyIter:
             def __init__(self, n):
                 self.n = n
+
             def __iter__(self):
                 return self
+
             def __next__(self):
                 self.n -= 1
                 if self.n < 0:
@@ -425,17 +453,19 @@ class TestUops(unittest.TestCase):
 
 
 @requires_specialization
-@unittest.skipIf(Py_GIL_DISABLED, "optimizer not yet supported in free-threaded builds")
+@unittest.skipIf(
+    Py_GIL_DISABLED, "optimizer not yet supported in free-threaded builds"
+)
 @requires_jit_enabled
-@unittest.skipIf(os.getenv("PYTHON_UOPS_OPTIMIZE") == "0", "Needs uop optimizer to run.")
+@unittest.skipIf(
+    os.getenv("PYTHON_UOPS_OPTIMIZE") == "0", "Needs uop optimizer to run."
+)
 class TestUopsOptimization(unittest.TestCase):
-
     def _run_with_optimizer(self, testfunc, arg):
         res = testfunc(arg)
 
         ex = get_first_executor(testfunc)
         return res, ex
-
 
     def test_int_type_propagation(self):
         def testfunc(loops):
@@ -449,9 +479,17 @@ class TestUopsOptimization(unittest.TestCase):
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertIsNotNone(ex)
         self.assertEqual(res, (TIER2_THRESHOLD - 1) * 2 + 1)
-        binop_count = [opname for opname in iter_opnames(ex) if opname == "_BINARY_OP_ADD_INT"]
-        guard_tos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"]
-        guard_nos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"]
+        binop_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_BINARY_OP_ADD_INT"
+        ]
+        guard_tos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"
+        ]
+        guard_nos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"
+        ]
         self.assertGreaterEqual(len(binop_count), 3)
         self.assertLessEqual(len(guard_tos_int_count), 1)
         self.assertLessEqual(len(guard_nos_int_count), 1)
@@ -459,6 +497,7 @@ class TestUopsOptimization(unittest.TestCase):
     def test_int_type_propagation_through_frame(self):
         def double(x):
             return x + x
+
         def testfunc(loops):
             num = 0
             for i in range(loops):
@@ -472,9 +511,17 @@ class TestUopsOptimization(unittest.TestCase):
         ex = get_first_executor(testfunc)
         self.assertIsNotNone(ex)
         self.assertEqual(res, (TIER2_THRESHOLD - 1) * 4)
-        binop_count = [opname for opname in iter_opnames(ex) if opname == "_BINARY_OP_ADD_INT"]
-        guard_tos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"]
-        guard_nos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"]
+        binop_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_BINARY_OP_ADD_INT"
+        ]
+        guard_tos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"
+        ]
+        guard_nos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"
+        ]
         self.assertGreaterEqual(len(binop_count), 3)
         self.assertLessEqual(len(guard_tos_int_count), 1)
         self.assertLessEqual(len(guard_nos_int_count), 1)
@@ -482,6 +529,7 @@ class TestUopsOptimization(unittest.TestCase):
     def test_int_type_propagation_from_frame(self):
         def double(x):
             return x + x
+
         def testfunc(loops):
             num = 0
             for i in range(loops):
@@ -495,9 +543,17 @@ class TestUopsOptimization(unittest.TestCase):
         ex = get_first_executor(testfunc)
         self.assertIsNotNone(ex)
         self.assertEqual(res, (TIER2_THRESHOLD - 1) * 4)
-        binop_count = [opname for opname in iter_opnames(ex) if opname == "_BINARY_OP_ADD_INT"]
-        guard_tos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"]
-        guard_nos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"]
+        binop_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_BINARY_OP_ADD_INT"
+        ]
+        guard_tos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"
+        ]
+        guard_nos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"
+        ]
         self.assertGreaterEqual(len(binop_count), 3)
         self.assertLessEqual(len(guard_tos_int_count), 1)
         self.assertLessEqual(len(guard_nos_int_count), 1)
@@ -515,13 +571,18 @@ class TestUopsOptimization(unittest.TestCase):
 
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertIsNotNone(ex)
-        binop_count = [opname for opname in iter_opnames(ex) if opname == "_BINARY_OP_ADD_INT"]
+        binop_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_BINARY_OP_ADD_INT"
+        ]
         self.assertGreaterEqual(len(binop_count), 3)
 
     def test_call_py_exact_args(self):
         def testfunc(n):
             def dummy(x):
-                return x+1
+                return x + 1
+
             for i in range(n):
                 dummy(i)
 
@@ -564,7 +625,9 @@ class TestUopsOptimization(unittest.TestCase):
         uops = get_opnames(ex)
         self.assertIn("_GUARD_TOS_INT", uops)
         self.assertNotIn("_GUARD_NOS_INT", uops)
-        guard_tos_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"]
+        guard_tos_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"
+        ]
         self.assertEqual(len(guard_tos_count), 1)
 
     def test_comprehension(self):
@@ -580,7 +643,7 @@ class TestUopsOptimization(unittest.TestCase):
 
     def test_call_py_exact_args_disappearing(self):
         def dummy(x):
-            return x+1
+            return x + 1
 
         def testfunc(n):
             for i in range(n):
@@ -593,6 +656,7 @@ class TestUopsOptimization(unittest.TestCase):
 
         def dummy(x):
             return x + 2
+
         testfunc(32)
 
         ex = get_first_executor(testfunc)
@@ -603,7 +667,9 @@ class TestUopsOptimization(unittest.TestCase):
 
     def test_promote_globals_to_constants(self):
 
-        result = script_helper.run_python_until_end('-c', textwrap.dedent("""
+        result = script_helper.run_python_until_end(
+            "-c",
+            textwrap.dedent("""
         import _testinternalcapi
         import opcode
         import _opcode
@@ -633,7 +699,9 @@ class TestUopsOptimization(unittest.TestCase):
         uops = get_opnames(ex)
         assert "_LOAD_GLOBAL_BUILTINS" not in uops
         assert "_LOAD_CONST_INLINE_BORROW" in uops
-        """), PYTHON_JIT="1")
+        """),
+            PYTHON_JIT="1",
+        )
         self.assertEqual(result[0].rc, 0, result)
 
     def test_float_add_constant_propagation(self):
@@ -650,8 +718,16 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertAlmostEqual(res, TIER2_THRESHOLD + 1)
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
-        guard_tos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_FLOAT"]
-        guard_nos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_FLOAT"]
+        guard_tos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_TOS_FLOAT"
+        ]
+        guard_nos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_NOS_FLOAT"
+        ]
         self.assertLessEqual(len(guard_tos_float_count), 1)
         self.assertLessEqual(len(guard_nos_float_count), 1)
         # TODO gh-115506: this assertion may change after propagating constants.
@@ -672,8 +748,16 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertAlmostEqual(res, -TIER2_THRESHOLD + 1)
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
-        guard_tos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_FLOAT"]
-        guard_nos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_FLOAT"]
+        guard_tos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_TOS_FLOAT"
+        ]
+        guard_nos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_NOS_FLOAT"
+        ]
         self.assertLessEqual(len(guard_tos_float_count), 1)
         self.assertLessEqual(len(guard_nos_float_count), 1)
         # TODO gh-115506: this assertion may change after propagating constants.
@@ -694,8 +778,16 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertAlmostEqual(res, 1.0)
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
-        guard_tos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_FLOAT"]
-        guard_nos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_FLOAT"]
+        guard_tos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_TOS_FLOAT"
+        ]
+        guard_nos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_NOS_FLOAT"
+        ]
         self.assertLessEqual(len(guard_tos_float_count), 1)
         self.assertLessEqual(len(guard_nos_float_count), 1)
         # TODO gh-115506: this assertion may change after propagating constants.
@@ -716,8 +808,16 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertEqual(res, "")
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
-        guard_tos_unicode_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_UNICODE"]
-        guard_nos_unicode_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_UNICODE"]
+        guard_tos_unicode_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_TOS_UNICODE"
+        ]
+        guard_nos_unicode_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_NOS_UNICODE"
+        ]
         self.assertLessEqual(len(guard_tos_unicode_count), 1)
         self.assertLessEqual(len(guard_nos_unicode_count), 1)
         self.assertIn("_BINARY_OP_ADD_UNICODE", uops)
@@ -736,8 +836,16 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertTrue(res)
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
-        guard_tos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_FLOAT"]
-        guard_nos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_FLOAT"]
+        guard_tos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_TOS_FLOAT"
+        ]
+        guard_nos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_NOS_FLOAT"
+        ]
         self.assertLessEqual(len(guard_tos_float_count), 1)
         self.assertLessEqual(len(guard_nos_float_count), 1)
         self.assertIn("_COMPARE_OP_FLOAT", uops)
@@ -756,8 +864,12 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertTrue(res)
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
-        guard_tos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"]
-        guard_nos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"]
+        guard_tos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"
+        ]
+        guard_nos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"
+        ]
         self.assertLessEqual(len(guard_tos_int_count), 1)
         self.assertLessEqual(len(guard_nos_int_count), 1)
         self.assertIn("_COMPARE_OP_INT", uops)
@@ -776,8 +888,12 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertEqual(res, 1)
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
-        guard_nos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"]
-        guard_tos_int_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"]
+        guard_nos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_INT"
+        ]
+        guard_tos_int_count = [
+            opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_INT"
+        ]
         self.assertLessEqual(len(guard_nos_int_count), 1)
         self.assertEqual(len(guard_tos_int_count), 0)
         self.assertIn("_COMPARE_OP_INT", uops)
@@ -796,8 +912,16 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertEqual(res, 1)
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
-        guard_nos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_FLOAT"]
-        guard_tos_float_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_FLOAT"]
+        guard_nos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_NOS_FLOAT"
+        ]
+        guard_tos_float_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_TOS_FLOAT"
+        ]
         self.assertLessEqual(len(guard_nos_float_count), 1)
         self.assertEqual(len(guard_tos_float_count), 0)
         self.assertIn("_COMPARE_OP_FLOAT", uops)
@@ -816,8 +940,16 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertTrue(res)
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
-        guard_tos_unicode_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_TOS_UNICODE"]
-        guard_nos_unicode_count = [opname for opname in iter_opnames(ex) if opname == "_GUARD_NOS_UNICODE"]
+        guard_tos_unicode_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_TOS_UNICODE"
+        ]
+        guard_nos_unicode_count = [
+            opname
+            for opname in iter_opnames(ex)
+            if opname == "_GUARD_NOS_UNICODE"
+        ]
         self.assertLessEqual(len(guard_tos_unicode_count), 1)
         self.assertLessEqual(len(guard_nos_unicode_count), 1)
         self.assertIn("_COMPARE_OP_STR", uops)
@@ -826,9 +958,11 @@ class TestUopsOptimization(unittest.TestCase):
     def test_combine_stack_space_checks_sequential(self):
         def dummy12(x):
             return x - 1
+
         def dummy13(y):
             z = y + 2
             return y, z
+
         def testfunc(n):
             a = 0
             for _ in range(n):
@@ -849,15 +983,19 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE_OPERAND"), 1)
         # sequential calls: max(12, 13) == 13
         largest_stack = _testinternalcapi.get_co_framesize(dummy13.__code__)
-        self.assertIn(("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands)
+        self.assertIn(
+            ("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands
+        )
 
     @unittest.skip("gh-139109 WIP")
     def test_combine_stack_space_checks_nested(self):
         def dummy12(x):
             return x + 3
+
         def dummy15(y):
             z = dummy12(y)
             return y, z
+
         def testfunc(n):
             a = 0
             for _ in range(n):
@@ -876,23 +1014,27 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE"), 0)
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE_OPERAND"), 1)
         # nested calls: 15 + 12 == 27
-        largest_stack = (
-            _testinternalcapi.get_co_framesize(dummy15.__code__) +
-            _testinternalcapi.get_co_framesize(dummy12.__code__)
+        largest_stack = _testinternalcapi.get_co_framesize(
+            dummy15.__code__
+        ) + _testinternalcapi.get_co_framesize(dummy12.__code__)
+        self.assertIn(
+            ("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands
         )
-        self.assertIn(("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands)
 
     @unittest.skip("gh-139109 WIP")
     def test_combine_stack_space_checks_several_calls(self):
         def dummy12(x):
             return x + 3
+
         def dummy13(y):
             z = y + 2
             return y, z
+
         def dummy18(y):
             z = dummy12(y)
             x, w = dummy13(z)
             return z, x, w
+
         def testfunc(n):
             a = 0
             for _ in range(n):
@@ -912,24 +1054,28 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE"), 0)
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE_OPERAND"), 1)
         # max(12, 18 + max(12, 13)) == 31
-        largest_stack = (
-            _testinternalcapi.get_co_framesize(dummy18.__code__) +
-            _testinternalcapi.get_co_framesize(dummy13.__code__)
+        largest_stack = _testinternalcapi.get_co_framesize(
+            dummy18.__code__
+        ) + _testinternalcapi.get_co_framesize(dummy13.__code__)
+        self.assertIn(
+            ("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands
         )
-        self.assertIn(("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands)
 
     @unittest.skip("gh-139109 WIP")
     def test_combine_stack_space_checks_several_calls_different_order(self):
         # same as `several_calls` but with top-level calls reversed
         def dummy12(x):
             return x + 3
+
         def dummy13(y):
             z = y + 2
             return y, z
+
         def dummy18(y):
             z = dummy12(y)
             x, w = dummy13(z)
             return z, x, w
+
         def testfunc(n):
             a = 0
             for _ in range(n):
@@ -949,31 +1095,39 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE"), 0)
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE_OPERAND"), 1)
         # max(18 + max(12, 13), 12) == 31
-        largest_stack = (
-            _testinternalcapi.get_co_framesize(dummy18.__code__) +
-            _testinternalcapi.get_co_framesize(dummy13.__code__)
+        largest_stack = _testinternalcapi.get_co_framesize(
+            dummy18.__code__
+        ) + _testinternalcapi.get_co_framesize(dummy13.__code__)
+        self.assertIn(
+            ("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands
         )
-        self.assertIn(("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands)
 
     @unittest.skip("gh-139109 WIP")
     def test_combine_stack_space_complex(self):
         def dummy0(x):
             return x
+
         def dummy1(x):
             return dummy0(x)
+
         def dummy2(x):
             return dummy1(x)
+
         def dummy3(x):
             return dummy0(x)
+
         def dummy4(x):
             y = dummy0(x)
             return dummy3(y)
+
         def dummy5(x):
             return dummy2(x)
+
         def dummy6(x):
             y = dummy5(x)
             z = dummy0(y)
             return dummy4(z)
+
         def testfunc(n):
             a = 0
             for _ in range(n):
@@ -995,11 +1149,11 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE"), 0)
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE_OPERAND"), 1)
         largest_stack = (
-            _testinternalcapi.get_co_framesize(dummy6.__code__) +
-            _testinternalcapi.get_co_framesize(dummy5.__code__) +
-            _testinternalcapi.get_co_framesize(dummy2.__code__) +
-            _testinternalcapi.get_co_framesize(dummy1.__code__) +
-            _testinternalcapi.get_co_framesize(dummy0.__code__)
+            _testinternalcapi.get_co_framesize(dummy6.__code__)
+            + _testinternalcapi.get_co_framesize(dummy5.__code__)
+            + _testinternalcapi.get_co_framesize(dummy2.__code__)
+            + _testinternalcapi.get_co_framesize(dummy1.__code__)
+            + _testinternalcapi.get_co_framesize(dummy0.__code__)
         )
         self.assertIn(
             ("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands
@@ -1016,14 +1170,19 @@ class TestUopsOptimization(unittest.TestCase):
         header = """
             def dummy_large(a0):
         """
-        body = "".join([f"""
-                a{n+1} = a{n} + 1
-        """ for n in range(repetitions)])
+        body = "".join(
+            [
+                f"""
+                a{n + 1} = a{n} + 1
+        """
+                for n in range(repetitions)
+            ]
+        )
         return_ = f"""
-                return a{repetitions-1}
+                return a{repetitions - 1}
         """
         exec(textwrap.dedent(header + body + return_), ns, ns)
-        dummy_large = ns['dummy_large']
+        dummy_large = ns["dummy_large"]
 
         # this is something like:
         #
@@ -1057,12 +1216,13 @@ class TestUopsOptimization(unittest.TestCase):
         # so we need to account for both possibilities
         self.assertIn(uop_names.count("_CHECK_STACK_SPACE"), [0, 1])
         if uop_names.count("_CHECK_STACK_SPACE") == 0:
-            largest_stack = (
-                _testinternalcapi.get_co_framesize(dummy15.__code__) +
-                _testinternalcapi.get_co_framesize(dummy_large.__code__)
-            )
+            largest_stack = _testinternalcapi.get_co_framesize(
+                dummy15.__code__
+            ) + _testinternalcapi.get_co_framesize(dummy_large.__code__)
         else:
-            largest_stack = _testinternalcapi.get_co_framesize(dummy15.__code__)
+            largest_stack = _testinternalcapi.get_co_framesize(
+                dummy15.__code__
+            )
         self.assertIn(
             ("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands
         )
@@ -1073,6 +1233,7 @@ class TestUopsOptimization(unittest.TestCase):
             while x > 0:
                 return dummy15(x - 1)
             return 42
+
         def testfunc(n):
             a = 0
             for _ in range(n):
@@ -1095,26 +1256,36 @@ class TestUopsOptimization(unittest.TestCase):
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE"), 1)
         self.assertEqual(uop_names.count("_CHECK_STACK_SPACE_OPERAND"), 1)
         largest_stack = _testinternalcapi.get_co_framesize(dummy15.__code__)
-        self.assertIn(("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands)
+        self.assertIn(
+            ("_CHECK_STACK_SPACE_OPERAND", largest_stack), uops_and_operands
+        )
 
     def test_many_nested(self):
         # overflow the trace_stack
         def dummy_a(x):
             return x
+
         def dummy_b(x):
             return dummy_a(x)
+
         def dummy_c(x):
             return dummy_b(x)
+
         def dummy_d(x):
             return dummy_c(x)
+
         def dummy_e(x):
             return dummy_d(x)
+
         def dummy_f(x):
             return dummy_e(x)
+
         def dummy_g(x):
             return dummy_f(x)
+
         def dummy_h(x):
             return dummy_g(x)
+
         def testfunc(n):
             a = 0
             for _ in range(n):
@@ -1128,10 +1299,12 @@ class TestUopsOptimization(unittest.TestCase):
     def test_return_generator(self):
         def gen():
             yield None
+
         def testfunc(n):
             for i in range(n):
                 gen()
             return i
+
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertEqual(res, TIER2_THRESHOLD - 1)
         self.assertIsNotNone(ex)
@@ -1143,6 +1316,7 @@ class TestUopsOptimization(unittest.TestCase):
             for i in set(range(n)):
                 t += i
             return t
+
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertEqual(res, TIER2_THRESHOLD * (TIER2_THRESHOLD - 1) // 2)
         self.assertIsNotNone(ex)
@@ -1153,12 +1327,14 @@ class TestUopsOptimization(unittest.TestCase):
         def gen(n):
             for i in range(n):
                 yield i
+
         def testfunc(n):
             g = gen(n)
             s = 0
             for i in g:
                 s += i
             return s
+
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertEqual(res, sum(range(TIER2_THRESHOLD)))
         self.assertIsNotNone(ex)
@@ -1241,14 +1417,22 @@ class TestUopsOptimization(unittest.TestCase):
             pass
 
         res, ex = self._run_with_optimizer(thing, Foo())
-        opnames = list(iter_opnames(ex))
         self.assertIsNotNone(ex)
+        opnames = list(iter_opnames(ex))
         self.assertEqual(res, TIER2_THRESHOLD * 6 + 1)
         call = opnames.index("_CALL_BUILTIN_FAST")
-        load_attr_top = opnames.index("_POP_TOP_LOAD_CONST_INLINE_BORROW", 0, call)
-        load_attr_bottom = opnames.index("_POP_TOP_LOAD_CONST_INLINE_BORROW", call)
-        self.assertEqual(opnames[:load_attr_top].count("_GUARD_TYPE_VERSION"), 1)
-        self.assertEqual(opnames[call:load_attr_bottom].count("_CHECK_VALIDITY"), 2)
+        load_attr_top = opnames.index(
+            "_POP_TOP_LOAD_CONST_INLINE_BORROW", 0, call
+        )
+        load_attr_bottom = opnames.index(
+            "_POP_TOP_LOAD_CONST_INLINE_BORROW", call
+        )
+        self.assertEqual(
+            opnames[:load_attr_top].count("_GUARD_TYPE_VERSION"), 1
+        )
+        self.assertEqual(
+            opnames[call:load_attr_bottom].count("_CHECK_VALIDITY"), 2
+        )
 
     def test_guard_type_version_removed_escaping(self):
 
@@ -1263,15 +1447,24 @@ class TestUopsOptimization(unittest.TestCase):
 
         class Foo:
             attr = 1
+
         res, ex = self._run_with_optimizer(thing, Foo())
         opnames = list(iter_opnames(ex))
         self.assertIsNotNone(ex)
         self.assertEqual(res, TIER2_THRESHOLD * 2)
         call = opnames.index("_CALL_BUILTIN_FAST_WITH_KEYWORDS")
-        load_attr_top = opnames.index("_POP_TOP_LOAD_CONST_INLINE_BORROW", 0, call)
-        load_attr_bottom = opnames.index("_POP_TOP_LOAD_CONST_INLINE_BORROW", call)
-        self.assertEqual(opnames[:load_attr_top].count("_GUARD_TYPE_VERSION"), 1)
-        self.assertEqual(opnames[call:load_attr_bottom].count("_CHECK_VALIDITY"), 2)
+        load_attr_top = opnames.index(
+            "_POP_TOP_LOAD_CONST_INLINE_BORROW", 0, call
+        )
+        load_attr_bottom = opnames.index(
+            "_POP_TOP_LOAD_CONST_INLINE_BORROW", call
+        )
+        self.assertEqual(
+            opnames[:load_attr_top].count("_GUARD_TYPE_VERSION"), 1
+        )
+        self.assertEqual(
+            opnames[call:load_attr_bottom].count("_CHECK_VALIDITY"), 2
+        )
 
     def test_guard_type_version_executor_invalidated(self):
         """
@@ -1291,7 +1484,9 @@ class TestUopsOptimization(unittest.TestCase):
         res, ex = self._run_with_optimizer(thing, Foo())
         self.assertEqual(res, TIER2_THRESHOLD * 2)
         self.assertIsNotNone(ex)
-        self.assertEqual(list(iter_opnames(ex)).count("_GUARD_TYPE_VERSION"), 1)
+        self.assertEqual(
+            list(iter_opnames(ex)).count("_GUARD_TYPE_VERSION"), 1
+        )
         self.assertTrue(ex.is_valid())
         Foo.attr = 0
         self.assertFalse(ex.is_valid())
@@ -1341,6 +1536,7 @@ class TestUopsOptimization(unittest.TestCase):
             for i in range(n):
                 result += test_bound_method(i)
             return result
+
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertEqual(res, sum(range(TIER2_THRESHOLD)))
         self.assertIsNotNone(ex)
@@ -1434,7 +1630,9 @@ class TestUopsOptimization(unittest.TestCase):
                     n = Convert9999ToNone()
                     i + i  # Remove guards for i.
                     n = None  # Change i.
-                    i + i  # This crashed when we didn't treat DECREF as escaping (gh-124483)
+                    (
+                        i + i
+                    )  # This crashed when we didn't treat DECREF as escaping (gh-124483)
             except TypeError:
                 pass
 
@@ -1507,8 +1705,12 @@ class TestUopsOptimization(unittest.TestCase):
             trace = []
             for i in range(n):
                 # zero is always (int) 0, but we can only prove that it's a integer:
-                false = i == TIER2_THRESHOLD # this will always be false, while hopefully still fooling optimizer improvements
-                zero = false + 0 # this should always set the variable zero equal to 0
+                false = (
+                    i == TIER2_THRESHOLD
+                )  # this will always be false, while hopefully still fooling optimizer improvements
+                zero = (
+                    false + 0
+                )  # this should always set the variable zero equal to 0
                 trace.append("A")
                 if not zero:  # Kept.
                     trace.append("B")
@@ -1586,13 +1788,13 @@ class TestUopsOptimization(unittest.TestCase):
 
     def test_unary_not_pop_top_load_const_inline_borrow(self):
         def testfunc(n):
-                x = 0
-                for i in range(n):
-                    a = 42
-                    result = not a
-                    if result:
-                        x += 1
-                return x
+            x = 0
+            for i in range(n):
+                a = 42
+                result = not a
+                if result:
+                    x += 1
+            return x
 
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertEqual(res, 0)
@@ -1712,6 +1914,7 @@ class TestUopsOptimization(unittest.TestCase):
             ....
 
         """
+
         def testfunc(n):
             x = 0
             s = {1, 2, 3}
@@ -1738,6 +1941,7 @@ class TestUopsOptimization(unittest.TestCase):
             ....
 
         """
+
         def testfunc(n):
             x = 0
             s = {1: 1, 2: 2, 3: 3}
@@ -1850,7 +2054,7 @@ class TestUopsOptimization(unittest.TestCase):
             x = []
             s = "foo"
             for _ in range(n):
-                y = s[0]       # _BINARY_OP_SUBSCR_STR_INT
+                y = s[0]  # _BINARY_OP_SUBSCR_STR_INT
                 z = "bar" + y  # (_GUARD_TOS_UNICODE) + _BINARY_OP_ADD_UNICODE
                 x.append(z)
             return x
@@ -1869,7 +2073,7 @@ class TestUopsOptimization(unittest.TestCase):
         def testfunc(n):
             x = 0
             for _ in range(n):
-                foo = eval('42')
+                foo = eval("42")
                 x += type(foo) is int
             return x
 
@@ -1920,7 +2124,7 @@ class TestUopsOptimization(unittest.TestCase):
             x = 0
             for _ in range(n):
                 y = str(42)
-                if y == '42':
+                if y == "42":
                     x += 1
             return x
 
@@ -1936,8 +2140,8 @@ class TestUopsOptimization(unittest.TestCase):
         def testfunc(n):
             x = 0
             for _ in range(n):
-                y = str(42) + 'foo'
-                if y == '42foo':
+                y = str(42) + "foo"
+                if y == "42foo":
                     x += 1
             return x
 
@@ -1958,8 +2162,8 @@ class TestUopsOptimization(unittest.TestCase):
         def testfunc(n):
             x = 0
             for _ in range(n):
-                y = str('foo')  # string argument
-                if y:           # _TO_BOOL_STR + _GUARD_IS_TRUE_POP are removed
+                y = str("foo")  # string argument
+                if y:  # _TO_BOOL_STR + _GUARD_IS_TRUE_POP are removed
                     x += 1
             return x
 
@@ -1993,7 +2197,7 @@ class TestUopsOptimization(unittest.TestCase):
             x = 0
             for _ in range(n):
                 y = tuple([1, 2])  # _CALL_TUPLE_1
-                if y[0] == 1:      # _BINARY_OP_SUBSCR_TUPLE_INT
+                if y[0] == 1:  # _BINARY_OP_SUBSCR_TUPLE_INT
                     x += 1
             return x
 
@@ -2014,8 +2218,8 @@ class TestUopsOptimization(unittest.TestCase):
             x = 0
             for _ in range(n):
                 y = tuple((1, 2))  # tuple argument
-                a, _ = y           # _UNPACK_SEQUENCE_TWO_TUPLE
-                if a == 1:         # _COMPARE_OP_INT + _GUARD_IS_TRUE_POP are removed
+                a, _ = y  # _UNPACK_SEQUENCE_TWO_TUPLE
+                if a == 1:  # _COMPARE_OP_INT + _GUARD_IS_TRUE_POP are removed
                     x += 1
             return x
 
@@ -2101,6 +2305,7 @@ class TestUopsOptimization(unittest.TestCase):
                     case [_, _, _, _]:
                         x += 1.0
             return x
+
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertEqual(int(res), TIER2_THRESHOLD)
         uops = get_opnames(ex)
@@ -2116,6 +2321,7 @@ class TestUopsOptimization(unittest.TestCase):
                     case [_, _]:
                         x += 1.0
             return x
+
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertEqual(int(res), TIER2_THRESHOLD)
         uops = get_opnames(ex)
@@ -2131,6 +2337,7 @@ class TestUopsOptimization(unittest.TestCase):
                     case [_, _, _, _]:
                         x += 1.0
             return x
+
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertEqual(int(res), TIER2_THRESHOLD)
         uops = get_opnames(ex)
@@ -2142,7 +2349,9 @@ class TestUopsOptimization(unittest.TestCase):
             x = 0
             for _ in range(n):
                 y = (1, 2)
-                if y[0] == 1:  # _COMPARE_OP_INT + _GUARD_IS_TRUE_POP are removed
+                if (
+                    y[0] == 1
+                ):  # _COMPARE_OP_INT + _GUARD_IS_TRUE_POP are removed
                     x += 1
             return x
 
@@ -2342,6 +2551,7 @@ class TestUopsOptimization(unittest.TestCase):
             for i in range(n):
                 x += 1
             return x
+
         res, ex = self._run_with_optimizer(testfunc, TIER2_THRESHOLD)
         self.assertEqual(res, TIER2_THRESHOLD)
         self.assertIsNotNone(ex)
@@ -2352,16 +2562,21 @@ class TestUopsOptimization(unittest.TestCase):
     def test_cached_attributes(self):
         class C:
             A = 1
+
             def m(self):
                 return 1
+
         class D:
             __slots__ = ()
             A = 1
+
             def m(self):
                 return 1
+
         class E(Exception):
             def m(self):
                 return 1
+
         def f(n):
             x = 0
             c = C()
@@ -2395,7 +2610,9 @@ class TestUopsOptimization(unittest.TestCase):
                 c += a + b
             return c
 
-        res, ex = self._run_with_optimizer(testfunc, (0.1, 0.1, TIER2_THRESHOLD))
+        res, ex = self._run_with_optimizer(
+            testfunc, (0.1, 0.1, TIER2_THRESHOLD)
+        )
         self.assertAlmostEqual(res, TIER2_THRESHOLD * (0.1 + 0.1))
         self.assertIsNotNone(ex)
         uops = get_opnames(ex)
@@ -2447,7 +2664,9 @@ class TestUopsOptimization(unittest.TestCase):
     def test_attr_promotion_failure(self):
         # We're not testing for any specific uops here, just
         # testing it doesn't crash.
-        script_helper.assert_python_ok('-c', textwrap.dedent("""
+        script_helper.assert_python_ok(
+            "-c",
+            textwrap.dedent("""
         import _testinternalcapi
         import _opcode
         import email
@@ -2472,7 +2691,8 @@ class TestUopsOptimization(unittest.TestCase):
         testfunc(_testinternalcapi.TIER2_THRESHOLD)
         ex = get_first_executor(testfunc)
         assert ex is not None
-        """))
+        """),
+        )
 
     def test_pop_top_specialize_none(self):
         def testfunc(n):
@@ -2513,7 +2733,6 @@ class TestUopsOptimization(unittest.TestCase):
 
         self.assertIn("_POP_TOP_FLOAT", uops)
 
-
     def test_unary_negative_long_float_type(self):
         def testfunc(n):
             for _ in range(n):
@@ -2536,7 +2755,7 @@ class TestUopsOptimization(unittest.TestCase):
     def test_binary_op_constant_evaluate(self):
         def testfunc(n):
             for _ in range(n):
-                2 ** 65
+                2**65
 
         testfunc(TIER2_THRESHOLD)
 
@@ -2553,6 +2772,7 @@ class TestUopsOptimization(unittest.TestCase):
         def make_f():
             def f():
                 return GLOBAL_136154
+
             return f
 
         make_f_with_bad_globals = types.FunctionType(make_f.__code__, {})
@@ -2591,9 +2811,11 @@ class TestUopsOptimization(unittest.TestCase):
 def global_identity(x):
     return x
 
+
 class TestObject:
     def test(self, *args, **kwargs):
         return args[0]
+
 
 test_object = TestObject()
 test_bound_method = TestObject.test.__get__(test_object)
